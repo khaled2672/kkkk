@@ -77,7 +77,7 @@ with st.sidebar:
         ),
         'Exhaust Vacuum': st.slider(
             'Exhaust Vacuum (cmHg)',
-            min_value=20.0, max_value=100.0, value=50.0, step=0.1
+            min_value=0.0, max_value=100.0, value=50.0, step=0.1
         )
     }
     
