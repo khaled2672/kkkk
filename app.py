@@ -10,12 +10,12 @@ st.markdown("Predict power output from ambient sensor inputs and optimize operat
 
 # === Load models and transformers ===
 try:
-    rf_model = joblib.load("random_forest_model.joblib")
-    xgb_model = joblib.load("xgboost_model.joblib")
+    rf_model = joblib.load("rf_model.joblib")
+    xgb_model = joblib.load("xgb_model.joblib")
     minmax_scaler = joblib.load("minmax_scaler.joblib")
     standard_scaler = joblib.load("standard_scaler.joblib")
     poly = joblib.load("poly_transformer.joblib")
-    best_weight = joblib.load("best_ensemble_weight.joblib")
+    best_weight = joblib.load("best_weight.txt")
 except Exception as e:
     st.error(f"❌ Model/component loading failed: {str(e)}")
     st.stop()
