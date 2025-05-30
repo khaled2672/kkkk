@@ -231,6 +231,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 import streamlit as st
 
+def economic_analysis(power_output_mw, heat_rate_btu_per_kwh, fuel_price_per_mmbtu, variable_om_cost_per_mwh, market_price_per_mwh):
+    # Calculate fuel cost per MWh
+    fuel_cost_per_mwh = (heat_rate_btu_per_kwh / 1_000_000) * fuel_price_per_mmbtu
+    
+    # Calculate total production cost per MWh
+    production_cost_per_mwh = fuel_cost_per_mwh + variable_om_cost_per_mwh
+    
+    # Calculate revenue per MWh (if market_price provided)
+    revenue_per_mwh = market_price_per_mwh
+    
+    # Calculate profit per MWh
+    profit_per_mwh = revenue_per_mwh - production_cost_per_mwh
+    
+    # Total profit per hour
+    total_profit_per_hour = profit_per_mwh * power_output_mw
+    
+    return {
+        "Fuel Cost ($/MWh)": round(fuel_cost_per_mwh, 2),
+        "Production Cost ($/MWh)": round(production_cost_per_mwh, 2),
+        "Revenue ($/MWh)": round(revenue_per_mwh, 2),
+        "Profit ($/MWh)": round(profit_per_mwh, 2),
+        "Total Profit ($/hour)": round(total_profit_per_hour, 2),
+    }
+
 st.subheader("Economic Analysis")
 
 power_output = st.number_input("Predicted Power Output (MW)", min_value=0.0, value=100.0)
