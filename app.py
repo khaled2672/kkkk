@@ -229,3 +229,24 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+import streamlit as st
+
+st.subheader("Economic Analysis")
+
+power_output = st.number_input("Predicted Power Output (MW)", min_value=0.0, value=100.0)
+heat_rate = st.slider("Heat Rate (Btu/kWh)", min_value=6000, max_value=9000, value=7000)
+fuel_price = st.number_input("Fuel Price ($/MMBtu)", min_value=0.0, value=3.5)
+om_cost = st.number_input("Variable O&M Cost ($/MWh)", min_value=0.0, value=2.0)
+market_price = st.number_input("Market Price ($/MWh, optional)", min_value=0.0, value=50.0)
+
+result = economic_analysis(
+    power_output_mw=power_output,
+    heat_rate_btu_per_kwh=heat_rate,
+    fuel_price_per_mmbtu=fuel_price,
+    variable_om_cost_per_mwh=om_cost,
+    market_price_per_mwh=market_price
+)
+
+st.markdown("### 📊 Results")
+for k, v in result.items():
+    st.write(f"**{k}**: {v}")
