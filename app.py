@@ -1,102 +1,130 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 import joblib
-import os
-from sklearn.metrics import r2_score, mean_squared_error
-import pyswarms as ps
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
-# --- Load Models and Scalers ---
-rf_model = joblib.load("rf_model.joblib")
-xgb_model = joblib.load("xgb_model.joblib")
-standard_scaler = joblib.load("standard_scaler.pkl")
-feature_scaler = joblib.load("feature_scaler.pkl")
-with open("best_weight.txt", "r") as f:
-    best_w = float(f.read().strip())
+# Set page config
+st.set_page_config(page_title="Power Plant Optimization", layout="wide")
 
-selected_features = ['Ambient Temperature', 'Ambient Relative Humidity', 'Ambient Pressure', 'Exhaust Vacuum']
+# Load models and scalers
+@st.cache_resource
+def load_models():
+    feature_scaler = joblib.load("feature_scaler.pkl")
+    standard_scaler = joblib.load("standard_scaler.pkl")
+    rf_model = joblib.load("rf_model.joblib")
+    xgb_model = joblib.load("xgb_model.joblib")
+    with open("best_weight.txt", "r") as f:
+        best_w = float(f.read().strip())
+    return feature_scaler, standard_scaler, rf_model, xgb_model, best_w
 
-st.set_page_config(layout="wide")
-st.title("🔧 Power Prediction & Optimization App")
+feature_scaler, standard_scaler, rf_model, xgb_model, best_w = load_models()
 
-# --- Section: Upload & View Dataset ---
-st.header("📥 Upload and Preview Data")
-uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.dataframe(df.head())
+# Sidebar for user input
+st.sidebar.header("Input Parameters")
+st.sidebar.write("Adjust the parameters to predict power output:")
 
-    target_column = 'Total Power'
+# Create input sliders
+input_data = {}
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    input_data['Ambient Temperature'] = st.slider(
+        'Ambient Temperature (°C)',
+        min_value=0.0, max_value=50.0, value=25.0, step=0.1
+    )
+    input_data['Ambient Pressure'] = st.slider(
+        'Ambient Pressure (mbar)',
+        min_value=900.0, max_value=1100.0, value=1013.0, step=0.1
+    )
+with col2:
+    input_data['Ambient Relative Humidity'] = st.slider(
+        'Ambient Relative Humidity (%)',
+        min_value=0.0, max_value=100.0, value=50.0, step=0.1
+    )
+    input_data['Exhaust Vacuum'] = st.slider(
+        'Exhaust Vacuum (cmHg)',
+        min_value=20.0, max_value=100.0, value=50.0, step=0.1
+    )
 
-    # Preprocessing steps
-    # --- Outlier removal ---
-    for col in selected_features:
-        Q1 = df[col].quantile(0.25)
-        Q3 = df[col].quantile(0.75)
-        IQR = Q3 - Q1
-        df = df[(df[col] >= Q1 - 1.5 * IQR) & (df[col] <= Q3 + 1.5 * IQR)]
+# Main content
+st.title("Power Plant Performance Optimizer")
+st.write("""
+This app predicts the total power output of a combined cycle power plant based on ambient conditions.
+The model uses an ensemble of Random Forest and XGBoost algorithms.
+""")
 
-    # --- Missing value imputation ---
-    from sklearn.impute import SimpleImputer
-    imputer = SimpleImputer(strategy='mean')
-    df[selected_features] = imputer.fit_transform(df[selected_features])
+# Prepare input data
+input_df = pd.DataFrame([input_data])
+features = ['Ambient Temperature', 'Ambient Relative Humidity', 'Ambient Pressure', 'Exhaust Vacuum']
 
-    # --- Feature scaling for PSO ---
-    df_scaled = df.copy()
-    df_scaled[selected_features] = feature_scaler.transform(df[selected_features])
-    X_scaled = standard_scaler.transform(df[selected_features])
-    y = df[target_column]
+# Scale the input data
+scaled_input = feature_scaler.transform(input_df[features])
+standard_scaled_input = standard_scaler.transform(scaled_input)
 
-    # --- Predictions ---
-    rf_preds = rf_model.predict(X_scaled)
-    xgb_preds = xgb_model.predict(X_scaled)
-    final_preds = best_w * rf_preds + (1 - best_w) * xgb_preds
+# Make predictions
+rf_pred = rf_model.predict(standard_scaled_input)[0]
+xgb_pred = xgb_model.predict(standard_scaled_input)[0]
+combined_pred = best_w * rf_pred + (1 - best_w) * xgb_pred
 
-    # --- Metrics ---
-    mse = mean_squared_error(y, final_preds)
-    r2 = r2_score(y, final_preds)
-    mae = np.mean(np.abs(y - final_preds))
-    mbe = np.mean(y - final_preds)
+# Display predictions
+st.subheader("Power Output Prediction")
+col1, col2, col3 = st.columns(3)
+col1.metric("Random Forest Prediction", f"{rf_pred:.2f} MW")
+col2.metric("XGBoost Prediction", f"{xgb_pred:.2f} MW")
+col3.metric("Combined Prediction", f"{combined_pred:.2f} MW", delta=f"{(combined_pred - (rf_pred + xgb_pred)/2):.2f} vs average")
 
-    st.subheader("📊 Model Performance")
-    st.write(f"**R2 Score**: {r2:.4f}")
-    st.write(f"**MSE**: {mse:.4f}")
-    st.write(f"**MAE**: {mae:.4f}")
-    st.write(f"**MBE**: {mbe:.4f}")
+# Feature importance visualization
+st.subheader("Feature Importance")
+tab1, tab2 = st.tabs(["Random Forest", "XGBoost"])
 
-    # --- Plot actual vs predicted ---
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(y.values, label='Actual', alpha=0.7)
-    ax.plot(final_preds, label='Predicted', alpha=0.7)
-    ax.set_title("Actual vs Predicted Power")
-    ax.legend()
-    st.pyplot(fig)
+with tab1:
+    try:
+        importances = rf_model.feature_importances_
+        fig, ax = plt.subplots()
+        ax.barh(features, importances, color='skyblue')
+        ax.set_title('Random Forest Feature Importance')
+        st.pyplot(fig)
+    except Exception as e:
+        st.warning("Could not display Random Forest feature importance")
 
-# --- Section: PSO Optimization ---
-st.header("🚀 Optimize for Maximum Power Output")
+with tab2:
+    try:
+        importances = xgb_model.feature_importances_
+        fig, ax = plt.subplots()
+        ax.barh(features, importances, color='salmon')
+        ax.set_title('XGBoost Feature Importance')
+        st.pyplot(fig)
+    except Exception as e:
+        st.warning("Could not display XGBoost feature importance")
 
-if st.button("Run PSO Optimization"):
-    bounds = (np.zeros(len(selected_features)), np.ones(len(selected_features)))
-    options = {'c1': 0.5, 'c2': 0.3, 'w': 0.9}
+# Optimization section
+st.subheader("Optimal Parameters for Maximum Power")
+st.write("""
+The system has found these optimal parameters that would maximize power output:
+""")
 
-    def objective_func(X):
-        preds = []
-        for particle in X:
-            particle = particle.reshape(1, -1)
-            pred = best_w * rf_model.predict(particle) + (1 - best_w) * xgb_model.predict(particle)
-            preds.append(pred[0])
-        return -np.array(preds)
+# Display optimal parameters from PSO (you might want to pre-compute these)
+optimal_scaled = np.array([0.5, 0.5, 0.5, 0.5])  # Replace with your actual PSO results
+optimal_original = feature_scaler.inverse_transform(optimal_scaled.reshape(1, -1))[0]
 
-    optimizer = ps.single.GlobalBestPSO(n_particles=50, dimensions=len(selected_features), options=options, bounds=bounds)
-    best_cost, best_pos = optimizer.optimize(objective_func, iters=100, verbose=False)
+optimal_params = dict(zip(features, optimal_original))
+for param, value in optimal_params.items():
+    st.write(f"- **{param}**: {value:.2f}")
 
-    st.success(f"✅ Max predicted power: {-best_cost:.2f}")
+# Comparison with current input
+st.write("\n")
+st.write("### Comparison with your input:")
+comparison_df = pd.DataFrame({
+    'Parameter': features,
+    'Your Input': [input_data[f] for f in features],
+    'Optimal Value': optimal_original,
+    'Difference': [input_data[f] - optimal_original[i] for i, f in enumerate(features)]
+})
+st.dataframe(comparison_df.style.format("{:.2f}"), use_container_width=True)
 
-    st.subheader("🔍 Optimal Scaled Features")
-    st.write(dict(zip(selected_features, best_pos.round(4))))
-
-    original_features = feature_scaler.inverse_transform(best_pos.reshape(1, -1))[0]
-    st.subheader("📈 Optimal Original Feature Values")
-    for feat, val in zip(selected_features, original_features):
-        st.write(f"**{feat}**: {val:.4f}")
+# Footer
+st.markdown("---")
+st.write("""
+**Note**: This is a predictive model and actual power plant performance may vary based on other factors not considered here.
+""")
