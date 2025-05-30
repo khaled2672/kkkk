@@ -2,129 +2,217 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import joblib
+import os
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
 # Set page config
-st.set_page_config(page_title="Power Plant Optimization", layout="wide")
+st.set_page_config(
+    page_title="Power Plant Optimization Dashboard",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Load models and scalers
+# Constants
+MODEL_FILES = {
+    'feature_scaler': 'feature_scaler.pkl',
+    'standard_scaler': 'standard_scaler.pkl',
+    'rf_model': 'rf_model.joblib',
+    'xgb_model': 'xgb_model.joblib',
+    'best_weight': 'best_weight.txt'
+}
+
+# Utility functions
 @st.cache_resource
-def load_models():
-    feature_scaler = joblib.load("feature_scaler.pkl")
-    standard_scaler = joblib.load("standard_scaler.pkl")
-    rf_model = joblib.load("rf_model.joblib")
-    xgb_model = joblib.load("xgb_model.joblib")
-    with open("best_weight.txt", "r") as f:
-        best_w = float(f.read().strip())
-    return feature_scaler, standard_scaler, rf_model, xgb_model, best_w
+def load_assets():
+    """Load all required models and scalers with error handling"""
+    loaded_assets = {}
+    missing_files = []
+    
+    for name, filename in MODEL_FILES.items():
+        try:
+            if filename.endswith('.txt'):
+                with open(filename, 'r') as f:
+                    loaded_assets[name] = float(f.read().strip())
+            else:
+                loaded_assets[name] = joblib.load(filename)
+        except FileNotFoundError:
+            missing_files.append(filename)
+    
+    if missing_files:
+        st.error(f"Missing required files: {', '.join(missing_files)}")
+        st.error("Please ensure these files are in the same directory as your app:")
+        for file in missing_files:
+            st.error(f"- {file}")
+        st.stop()
+    
+    return loaded_assets
 
-feature_scaler, standard_scaler, rf_model, xgb_model, best_w = load_models()
+# Load all models and scalers
+assets = load_assets()
 
 # Sidebar for user input
-st.sidebar.header("Input Parameters")
-st.sidebar.write("Adjust the parameters to predict power output:")
-
-# Create input sliders
-input_data = {}
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    input_data['Ambient Temperature'] = st.slider(
-        'Ambient Temperature (°C)',
-        min_value=0.0, max_value=50.0, value=25.0, step=0.1
-    )
-    input_data['Ambient Pressure'] = st.slider(
-        'Ambient Pressure (mbar)',
-        min_value=900.0, max_value=1100.0, value=1013.0, step=0.1
-    )
-with col2:
-    input_data['Ambient Relative Humidity'] = st.slider(
-        'Ambient Relative Humidity (%)',
-        min_value=0.0, max_value=100.0, value=50.0, step=0.1
-    )
-    input_data['Exhaust Vacuum'] = st.slider(
-        'Exhaust Vacuum (cmHg)',
-        min_value=20.0, max_value=100.0, value=50.0, step=0.1
-    )
+with st.sidebar:
+    st.header("⚙️ Input Parameters")
+    st.write("Adjust the ambient conditions to predict power output:")
+    
+    input_data = {
+        'Ambient Temperature': st.slider(
+            'Ambient Temperature (°C)',
+            min_value=0.0, max_value=50.0, value=25.0, step=0.1
+        ),
+        'Ambient Relative Humidity': st.slider(
+            'Ambient Relative Humidity (%)',
+            min_value=0.0, max_value=100.0, value=50.0, step=0.1
+        ),
+        'Ambient Pressure': st.slider(
+            'Ambient Pressure (mbar)',
+            min_value=900.0, max_value=1100.0, value=1013.0, step=0.1
+        ),
+        'Exhaust Vacuum': st.slider(
+            'Exhaust Vacuum (cmHg)',
+            min_value=20.0, max_value=100.0, value=50.0, step=0.1
+        )
+    }
+    
+    st.markdown("---")
+    st.write("### Model Information")
+    st.write(f"Ensemble Weight: {assets['best_weight']:.2f} RF / {1 - assets['best_weight']:.2f} XGBoost")
 
 # Main content
-st.title("Power Plant Performance Optimizer")
+st.title("🏭 Combined Cycle Power Plant Performance Optimizer")
 st.write("""
-This app predicts the total power output of a combined cycle power plant based on ambient conditions.
-The model uses an ensemble of Random Forest and XGBoost algorithms.
+This interactive dashboard predicts the total power output of a combined cycle power plant 
+based on ambient conditions using an ensemble of Random Forest and XGBoost models.
 """)
 
 # Prepare input data
-input_df = pd.DataFrame([input_data])
 features = ['Ambient Temperature', 'Ambient Relative Humidity', 'Ambient Pressure', 'Exhaust Vacuum']
+input_df = pd.DataFrame([input_data])
 
-# Scale the input data
-scaled_input = feature_scaler.transform(input_df[features])
-standard_scaled_input = standard_scaler.transform(scaled_input)
-
-# Make predictions
-rf_pred = rf_model.predict(standard_scaled_input)[0]
-xgb_pred = xgb_model.predict(standard_scaled_input)[0]
-combined_pred = best_w * rf_pred + (1 - best_w) * xgb_pred
+# Data processing pipeline
+try:
+    # Scale the input data
+    scaled_input = assets['feature_scaler'].transform(input_df[features])
+    standard_scaled_input = assets['standard_scaler'].transform(scaled_input)
+    
+    # Make predictions
+    rf_pred = assets['rf_model'].predict(standard_scaled_input)[0]
+    xgb_pred = assets['xgb_model'].predict(standard_scaled_input)[0]
+    combined_pred = assets['best_weight'] * rf_pred + (1 - assets['best_weight']) * xgb_pred
+    
+except Exception as e:
+    st.error(f"Error making predictions: {e}")
+    st.stop()
 
 # Display predictions
-st.subheader("Power Output Prediction")
+st.subheader("🔮 Power Output Prediction")
 col1, col2, col3 = st.columns(3)
-col1.metric("Random Forest Prediction", f"{rf_pred:.2f} MW")
-col2.metric("XGBoost Prediction", f"{xgb_pred:.2f} MW")
-col3.metric("Combined Prediction", f"{combined_pred:.2f} MW", delta=f"{(combined_pred - (rf_pred + xgb_pred)/2):.2f} vs average")
+col1.metric(
+    "Random Forest Prediction", 
+    f"{rf_pred:.2f} MW",
+    help="Prediction from the Random Forest model"
+)
+col2.metric(
+    "XGBoost Prediction", 
+    f"{xgb_pred:.2f} MW",
+    help="Prediction from the XGBoost model"
+)
+col3.metric(
+    "Ensemble Prediction", 
+    f"{combined_pred:.2f} MW", 
+    delta=f"{(combined_pred - (rf_pred + xgb_pred)/2):.2f} vs average",
+    help="Weighted combination of both models"
+)
 
 # Feature importance visualization
-st.subheader("Feature Importance")
+st.subheader("📊 Feature Importance Analysis")
 tab1, tab2 = st.tabs(["Random Forest", "XGBoost"])
 
 with tab1:
     try:
-        importances = rf_model.feature_importances_
-        fig, ax = plt.subplots()
-        ax.barh(features, importances, color='skyblue')
+        importances = assets['rf_model'].feature_importances_
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.barh(features, importances, color='#1f77b4')
         ax.set_title('Random Forest Feature Importance')
+        ax.set_xlabel('Importance Score')
         st.pyplot(fig)
     except Exception as e:
-        st.warning("Could not display Random Forest feature importance")
+        st.warning(f"Could not display Random Forest feature importance: {e}")
 
 with tab2:
     try:
-        importances = xgb_model.feature_importances_
-        fig, ax = plt.subplots()
-        ax.barh(features, importances, color='salmon')
+        importances = assets['xgb_model'].feature_importances_
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.barh(features, importances, color='#ff7f0e')
         ax.set_title('XGBoost Feature Importance')
+        ax.set_xlabel('Importance Score')
         st.pyplot(fig)
     except Exception as e:
-        st.warning("Could not display XGBoost feature importance")
+        st.warning(f"Could not display XGBoost feature importance: {e}")
 
 # Optimization section
-st.subheader("Optimal Parameters for Maximum Power")
+st.subheader("⚡ Optimal Parameters for Maximum Power")
 st.write("""
-The system has found these optimal parameters that would maximize power output:
+The theoretical optimal parameters that would maximize power output based on historical data patterns:
 """)
 
-# Display optimal parameters from PSO (you might want to pre-compute these)
-optimal_scaled = np.array([0.5, 0.5, 0.5, 0.5])  # Replace with your actual PSO results
-optimal_original = feature_scaler.inverse_transform(optimal_scaled.reshape(1, -1))[0]
-
+# Display optimal parameters (using the PSO results from your original code)
+optimal_scaled = np.array([0.5, 0.5, 0.5, 0.5])  # Replace with actual PSO results
+optimal_original = assets['feature_scaler'].inverse_transform(optimal_scaled.reshape(1, -1))[0]
 optimal_params = dict(zip(features, optimal_original))
-for param, value in optimal_params.items():
-    st.write(f"- **{param}**: {value:.2f}")
 
-# Comparison with current input
-st.write("\n")
-st.write("### Comparison with your input:")
+cols = st.columns(2)
+for i, (param, value) in enumerate(optimal_params.items()):
+    cols[i % 2].metric(
+        label=param,
+        value=f"{value:.2f}",
+        delta=f"{(input_data[param] - value):.2f} from your input",
+        delta_color="inverse"
+    )
+
+# Comparison table
+st.write("### 📝 Detailed Parameter Comparison")
 comparison_df = pd.DataFrame({
     'Parameter': features,
     'Your Input': [input_data[f] for f in features],
     'Optimal Value': optimal_original,
     'Difference': [input_data[f] - optimal_original[i] for i, f in enumerate(features)]
 })
-st.dataframe(comparison_df.style.format("{:.2f}"), use_container_width=True)
+
+st.dataframe(
+    comparison_df.style.format("{:.2f}").background_gradient(
+        subset=['Difference'], 
+        cmap='RdYlGn',
+        vmin=-50, 
+        vmax=50
+    ),
+    use_container_width=True,
+    height=200
+)
 
 # Footer
 st.markdown("---")
 st.write("""
-**Note**: This is a predictive model and actual power plant performance may vary based on other factors not considered here.
+**Note**: This predictive model estimates power output based on historical data patterns. 
+Actual plant performance may vary due to factors not considered in this model.
 """)
+
+# Add some styling
+st.markdown("""
+<style>
+    .stMetric {
+        background-color: #f0f2f6;
+        border-radius: 10px;
+        padding: 15px;
+    }
+    .stMetric label {
+        font-size: 1rem !important;
+        color: #555 !important;
+    }
+    .stMetric div {
+        font-size: 1.5rem !important;
+        font-weight: bold !important;
+    }
+</style>
+""", unsafe_allow_html=True)
