@@ -33,7 +33,13 @@ def load_assets():
         try:
             if filename.endswith('.txt'):
                 with open(filename, 'r') as f:
-                    loaded_assets[name] = float(f.read().strip())
+                    content = f.read().strip()
+                    # Ensure the content can be converted to float
+                    try:
+                        loaded_assets[name] = float(content)
+                    except ValueError:
+                        st.error(f"Invalid content in {filename}. Expected a number, got: {content}")
+                        st.stop()
             else:
                 loaded_assets[name] = joblib.load(filename)
         except FileNotFoundError:
@@ -110,18 +116,18 @@ st.subheader("🔮 Power Output Prediction")
 col1, col2, col3 = st.columns(3)
 col1.metric(
     "Random Forest Prediction", 
-    f"{rf_pred:.2f} MW",
+    f"{float(rf_pred):.2f} MW",  # Explicit conversion to float
     help="Prediction from the Random Forest model"
 )
 col2.metric(
     "XGBoost Prediction", 
-    f"{xgb_pred:.2f} MW",
+    f"{float(xgb_pred):.2f} MW",  # Explicit conversion to float
     help="Prediction from the XGBoost model"
 )
 col3.metric(
     "Ensemble Prediction", 
-    f"{combined_pred:.2f} MW", 
-    delta=f"{(combined_pred - (rf_pred + xgb_pred)/2):.2f} vs average",
+    f"{float(combined_pred):.2f} MW",  # Explicit conversion to float
+    delta=f"{(float(combined_pred) - (float(rf_pred) + float(xgb_pred))/2):.2f} vs average",
     help="Weighted combination of both models"
 )
 
@@ -158,38 +164,45 @@ The theoretical optimal parameters that would maximize power output based on his
 """)
 
 # Display optimal parameters (using the PSO results from your original code)
-optimal_scaled = np.array([0.5, 0.5, 0.5, 0.5])  # Replace with actual PSO results
-optimal_original = assets['feature_scaler'].inverse_transform(optimal_scaled.reshape(1, -1))[0]
-optimal_params = dict(zip(features, optimal_original))
+try:
+    optimal_scaled = np.array([0.5, 0.5, 0.5, 0.5])  # Replace with actual PSO results
+    optimal_original = assets['feature_scaler'].inverse_transform(optimal_scaled.reshape(1, -1))[0]
+    optimal_params = dict(zip(features, optimal_original))
 
-cols = st.columns(2)
-for i, (param, value) in enumerate(optimal_params.items()):
-    cols[i % 2].metric(
-        label=param,
-        value=f"{value:.2f}",
-        delta=f"{(input_data[param] - value):.2f} from your input",
-        delta_color="inverse"
+    cols = st.columns(2)
+    for i, (param, value) in enumerate(optimal_params.items()):
+        cols[i % 2].metric(
+            label=param,
+            value=f"{float(value):.2f}",  # Explicit conversion to float
+            delta=f"{(float(input_data[param]) - float(value)):.2f} from your input",
+            delta_color="inverse"
+        )
+
+    # Comparison table
+    st.write("### 📝 Detailed Parameter Comparison")
+    comparison_data = []
+    for i, feature in enumerate(features):
+        comparison_data.append({
+            'Parameter': feature,
+            'Your Input': float(input_data[feature]),
+            'Optimal Value': float(optimal_original[i]),
+            'Difference': float(input_data[feature]) - float(optimal_original[i])
+        })
+    
+    comparison_df = pd.DataFrame(comparison_data)
+    
+    st.dataframe(
+        comparison_df.style.format("{:.2f}").background_gradient(
+            subset=['Difference'], 
+            cmap='RdYlGn',
+            vmin=-50, 
+            vmax=50
+        ),
+        use_container_width=True,
+        height=200
     )
-
-# Comparison table
-st.write("### 📝 Detailed Parameter Comparison")
-comparison_df = pd.DataFrame({
-    'Parameter': features,
-    'Your Input': [input_data[f] for f in features],
-    'Optimal Value': optimal_original,
-    'Difference': [input_data[f] - optimal_original[i] for i, f in enumerate(features)]
-})
-
-st.dataframe(
-    comparison_df.style.format("{:.2f}").background_gradient(
-        subset=['Difference'], 
-        cmap='RdYlGn',
-        vmin=-50, 
-        vmax=50
-    ),
-    use_container_width=True,
-    height=200
-)
+except Exception as e:
+    st.warning(f"Could not display optimization results: {e}")
 
 # Footer
 st.markdown("---")
