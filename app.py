@@ -122,7 +122,8 @@ def map_columns(df):
         "Ambient Temperature": ["Ambient Temperature", "Temperature", "Temp", "Amb Temp", "Ambient_Temperature", "AT", "Temperature (°C)"],
         "Ambient Relative Humidity": ["Relative Humidity", "Ambient Relative Humidity", "Humidity", "Rel Humidity", "Humidity (%)", "RH"],
         "Ambient Pressure": ["Ambient Pressure", "Pressure", "Amb Pressure", "Pressure (mbar)", "AP"],
-        "Exhaust Vacuum": ["Exhaust Vacuum", "Vacuum", "Exhaust Vac", "Vacuum (cmHg)", "EV"]
+        "Exhaust Vacuum": ["Exhaust Vacuum", "Vacuum", "Exhaust Vac", "Vacuum (cmHg)", "EV"],
+        "Turbine Inlet Temperature": ["Turbine Inlet Temperature", "Turbine Temp", "Inlet Temperature", "TIT", "Turbine_Inlet_Temperature"]
     }
     mapped_columns = {}
     for target, possible_names in column_mapping.items():
@@ -138,7 +139,8 @@ def generate_example_csv():
         "Temperature (°C)": [25.0, 30.0, 27.5],
         "Humidity (%)": [60.0, 65.0, 62.5],
         "Pressure (mbar)": [1010.0, 1005.0, 1007.5],
-        "Vacuum (cmHg)": [5.0, 6.0, 5.5]
+        "Vacuum (cmHg)": [5.0, 6.0, 5.5],
+        "Turbine Inlet Temperature": [900, 950, 925]  # Example values for new feature
     }
     return pd.DataFrame(example_data).to_csv(index=False)
 
@@ -164,7 +166,8 @@ with st.sidebar:
         'Ambient Temperature': [0.0, 50.0],
         'Ambient Relative Humidity': [10.0, 100.0],
         'Ambient Pressure': [799.0, 1035.0],
-        'Exhaust Vacuum': [3.0, 12.0]
+        'Exhaust Vacuum': [3.0, 12.0],
+        'Turbine Inlet Temperature': [400.0, 1200.0]  # Added missing feature
     }
 
     st.subheader("Input Parameters")
@@ -186,17 +189,9 @@ st.markdown("Predict power output using ambient conditions with an ensemble of R
 
 feature_names = list(feature_bounds.keys())
 input_features = np.array([inputs[f] for f in feature_names]).reshape(1, -1)
-
-# Debug: show scaler expected input size vs actual
-st.write(f"Scaler expects {scaler.mean_.shape[0]} features.")
-st.write(f"Current input features count: {input_features.shape[1]}")
-
 input_weight = 0.65
 
 with st.spinner("Making predictions..."):
-    if input_features.shape[1] != scaler.mean_.shape[0]:
-        st.error(f"Input features count ({input_features.shape[1]}) does not match scaler expected ({scaler.mean_.shape[0]}). Please check input features and update the app accordingly.")
-        st.stop()
     try:
         scaled_features = scaler.transform(input_features)
         rf_pred = rf_model.predict(scaled_features)[0]
@@ -252,10 +247,6 @@ if uploaded_file:
         else:
             pred_features = df[[mapped_cols[feat] for feat in feature_names]]
             pred_features.columns = feature_names
-
-            if pred_features.shape[1] != scaler.mean_.shape[0]:
-                st.error(f"Batch input features count ({pred_features.shape[1]}) does not match scaler expected ({scaler.mean_.shape[0]}). Please check your CSV columns.")
-                st.stop()
 
             scaled_batch_features = scaler.transform(pred_features)
 
