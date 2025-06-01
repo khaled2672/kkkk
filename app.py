@@ -186,9 +186,17 @@ st.markdown("Predict power output using ambient conditions with an ensemble of R
 
 feature_names = list(feature_bounds.keys())
 input_features = np.array([inputs[f] for f in feature_names]).reshape(1, -1)
+
+# Debug: show scaler expected input size vs actual
+st.write(f"Scaler expects {scaler.mean_.shape[0]} features.")
+st.write(f"Current input features count: {input_features.shape[1]}")
+
 input_weight = 0.65
 
 with st.spinner("Making predictions..."):
+    if input_features.shape[1] != scaler.mean_.shape[0]:
+        st.error(f"Input features count ({input_features.shape[1]}) does not match scaler expected ({scaler.mean_.shape[0]}). Please check input features and update the app accordingly.")
+        st.stop()
     try:
         scaled_features = scaler.transform(input_features)
         rf_pred = rf_model.predict(scaled_features)[0]
@@ -244,6 +252,10 @@ if uploaded_file:
         else:
             pred_features = df[[mapped_cols[feat] for feat in feature_names]]
             pred_features.columns = feature_names
+
+            if pred_features.shape[1] != scaler.mean_.shape[0]:
+                st.error(f"Batch input features count ({pred_features.shape[1]}) does not match scaler expected ({scaler.mean_.shape[0]}). Please check your CSV columns.")
+                st.stop()
 
             scaled_batch_features = scaler.transform(pred_features)
 
